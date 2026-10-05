@@ -1,4 +1,4 @@
-name: Wails Cross-Platform Build
+name: Wails Cross-Platform Release
 
 on:
   push:
@@ -35,3 +35,35 @@ jobs:
           package: true
           go-version: "1.22"
           node-version: "20"
+
+      # Temporarily saves the files so the release job can grab them
+      - name: Upload Temporary Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.build.name }}
+          path: build/bin/*
+
+  release:
+    needs: build # Waits for both Windows and Linux builds to finish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Crucial permission required to create a Release
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Downloads the Windows and Linux binaries built in the previous step
+      - name: Download All Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          path: release-artifacts
+
+      # Automatically creates the Release page and attaches the files
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-artifacts/**/*
+          generate_release_notes: true # Auto-generates a changelog based on git commits
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
