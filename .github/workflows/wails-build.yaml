@@ -48,11 +48,50 @@ jobs:
       - name: Build Wails App
         run: wails build -clean -platform ${{ matrix.build.platform }}
 
+      - name: Add binaries (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux -o build/bin/yt-dlp
+          curl -L https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-linux64-gpl.tar.xz -o ffmpeg.tar.xz
+          tar -xf ffmpeg.tar.xz
+          cp ffmpeg-master-latest-linux64-gpl/bin/ffmpeg build/bin/
+          chmod +x build/bin/yt-dlp build/bin/ffmpeg
+
+      - name: Add binaries (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe -OutFile build/bin/yt-dlp.exe
+          Invoke-WebRequest https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg
+          Copy-Item ffmpeg/ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe build/bin/
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p dist/youtube-downloader
+          cp -r build/bin/* dist/youtube-downloader/
+          cp -r scripts dist/youtube-downloader/ || true
+          tar -czf youtube-downloader-linux-amd64.tar.gz -C dist youtube-downloader
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/youtube-downloader | Out-Null
+          Copy-Item build/bin/* dist/youtube-downloader/ -Recurse
+          if (Test-Path scripts) { Copy-Item scripts dist/youtube-downloader/scripts -Recurse }
+          Compress-Archive -Path dist/youtube-downloader -DestinationPath youtube-downloader-windows-amd64.zip
+
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.build.name }}
-          path: build/bin/*
+          path: |
+            *.tar.gz
+            *.zip
           if-no-files-found: error
 
   release:
