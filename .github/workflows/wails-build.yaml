@@ -11,10 +11,10 @@ jobs:
       fail-fast: false
       matrix:
         build:
-          - name: "my-app-linux"
+          - name: "youtube-downloader-linux"
             platform: "linux/amd64"
             os: "ubuntu-latest"
-          - name: "my-app-windows"
+          - name: "youtube-downloader-windows"
             platform: "windows/amd64"
             os: "windows-latest"
 
@@ -26,17 +26,33 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Build Wails App
-        uses: dAppServer/wails-build-action@v2.2
-        id: build
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
-          build-name: ${{ matrix.build.name }}
-          build-platform: ${{ matrix.build.platform }}
-          package: true
           go-version: "1.22"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
           node-version: "20"
 
-      # Temporarily saves the files so the release job can grab them
+      # Linux requires specific system dependencies to compile native hooks
+      - name: Install Linux Dependencies
+        if: matrix.build.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev build-essential pkg-config
+
+      # Install the Wails CLI natively using Go
+      - name: Install Wails CLI
+        run: go install ://github.com
+
+      # Build the binary explicitly using the matrix platform option
+      - name: Build Wails App
+        run: |
+          wails build -platform ${{ matrix.build.platform }}
+
+      # Upload using v4 without hidden internal wrappers
       - name: Upload Temporary Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -44,26 +60,24 @@ jobs:
           path: build/bin/*
 
   release:
-    needs: build # Waits for both Windows and Linux builds to finish
+    needs: build
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Crucial permission required to create a Release
+      contents: write
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Downloads the Windows and Linux binaries built in the previous step
       - name: Download All Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/download-artifact@v4
         with:
           path: release-artifacts
 
-      # Automatically creates the Release page and attaches the files
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: release-artifacts/**/*
-          generate_release_notes: true # Auto-generates a changelog based on git commits
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
