@@ -1,6 +1,10 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import {
+  FolderOpen, SlidersHorizontal, Layers, Plus, Download, Pause, Play,
+  X, RotateCcw, CircleAlert, Info, Inbox, ListVideo,
+} from 'lucide-vue-next'
+import {
   FetchInfo,
   CancelFetch,
   StartDownload,
@@ -39,8 +43,6 @@ let activeChecks = 0
 let offProgress = null
 let offStatus = null
 
-// ---------- helpers ----------
-
 const byId = (id) => jobs.value.find((j) => j.id === id)
 const removeJob = (id) => { jobs.value = jobs.value.filter((j) => j.id !== id) }
 const errText = (e) => (typeof e === 'string' ? e : e?.message || String(e))
@@ -54,8 +56,6 @@ function formatDuration(seconds) {
   return h ? `${h}:${m.toString().padStart(2, '0')}:${ss}` : `${m}:${ss}`
 }
 
-// ---------- settings ----------
-
 async function saveSettings() {
   try {
     await SaveSettings({
@@ -63,9 +63,7 @@ async function saveSettings() {
       maxConcurrent: maxConcurrent.value,
       defaultQuality: defaultQuality.value,
     })
-  } catch (e) {
-    // non-fatal, values still apply for this session
-  }
+  } catch (e) { /* non-fatal */ }
 }
 
 async function pickFolder() {
@@ -84,12 +82,7 @@ async function ensureFolder() {
   return !!outputDir.value
 }
 
-function onMaxChange() {
-  saveSettings()
-  pump()
-}
-
-// ---------- adding links + checking them ----------
+function onMaxChange() { saveSettings(); pump() }
 
 function addUrls() {
   const found = urlText.value
@@ -105,27 +98,13 @@ function addUrls() {
   notice.value = ''
   let dupes = 0
   for (const url of found) {
-    if (jobs.value.some((j) => j.url === url)) {
-      dupes++
-      continue
-    }
+    if (jobs.value.some((j) => j.url === url)) { dupes++; continue }
     const job = {
       id: `j${Date.now()}-${nextId++}`,
-      url,
-      title: '',
-      thumbnail: '',
-      uploader: '',
-      duration: 0,
-      status: 'fetching',
-      quality: defaultQuality.value,
-      progress: 0,
-      size: '',
-      speed: '',
-      eta: '',
-      stage: 1,
-      error: '',
-      pausing: false,
-      cancelling: false,
+      url, title: '', thumbnail: '', uploader: '', duration: 0,
+      status: 'fetching', quality: defaultQuality.value,
+      progress: 0, size: '', speed: '', eta: '', stage: 1,
+      error: '', pausing: false, cancelling: false,
     }
     jobs.value.push(job)
     fetchQueue.push(job.id)
@@ -139,7 +118,7 @@ function pumpFetch() {
   while (activeChecks < MAX_PARALLEL_CHECKS && fetchQueue.length) {
     const id = fetchQueue.shift()
     const j = byId(id)
-    if (!j || j.status !== 'fetching') continue // removed or cancelled while waiting
+    if (!j || j.status !== 'fetching') continue
     activeChecks++
     runFetch(id)
   }
@@ -157,17 +136,12 @@ async function runFetch(id) {
     j.status = 'ready'
   } catch (e) {
     const j = byId(id)
-    if (j && j.status === 'fetching') {
-      j.status = 'error'
-      j.error = errText(e)
-    }
+    if (j && j.status === 'fetching') { j.status = 'error'; j.error = errText(e) }
   } finally {
     activeChecks--
     pumpFetch()
   }
 }
-
-// ---------- queue + scheduler ----------
 
 const activeCount = computed(
   () => jobs.value.filter((j) => j.status === 'downloading' || j.status === 'processing').length,
@@ -191,11 +165,7 @@ async function startJob(j) {
   j.error = ''
   try {
     await StartDownload(j.id, j.url, j.quality, outputDir.value)
-  } catch (e) {
-    j.status = 'error'
-    j.error = errText(e)
-    pump()
-  }
+  } catch (e) { j.status = 'error'; j.error = errText(e); pump() }
 }
 
 async function queueJob(j) {
@@ -208,9 +178,7 @@ async function queueJob(j) {
 async function downloadAll() {
   if (!readyCount.value) return
   if (!(await ensureFolder())) return
-  for (const j of jobs.value) {
-    if (j.status === 'ready') j.status = 'queued'
-  }
+  for (const j of jobs.value) if (j.status === 'ready') j.status = 'queued'
   pump()
 }
 
@@ -222,86 +190,58 @@ function pauseJob(j) {
 
 function pauseAll() {
   for (const j of jobs.value) {
-    if (j.status === 'queued') j.status = 'paused' // hold it so it doesn't auto-start
+    if (j.status === 'queued') j.status = 'paused'
     else if (j.status === 'downloading') pauseJob(j)
   }
 }
 
-function resumeJob(j) {
-  j.status = 'queued'
-  pump()
-}
+function resumeJob(j) { j.status = 'queued'; pump() }
 
 function resumeAll() {
-  for (const j of jobs.value) {
-    if (j.status === 'paused') j.status = 'queued'
-  }
+  for (const j of jobs.value) if (j.status === 'paused') j.status = 'queued'
   pump()
 }
 
 function retryJob(j) {
   j.error = ''
-  if (!j.title) {
-    j.status = 'fetching'
-    fetchQueue.push(j.id)
-    pumpFetch()
-  } else {
-    queueJob(j)
-  }
+  if (!j.title) { j.status = 'fetching'; fetchQueue.push(j.id); pumpFetch() }
+  else queueJob(j)
 }
 
-// Cancel/remove behaves differently depending on where the item is.
 function cancelJob(j) {
   switch (j.status) {
     case 'fetching':
-      CancelFetch(j.id)
-      removeJob(j.id)
-      break
+      CancelFetch(j.id); removeJob(j.id); break
     case 'queued':
-      j.status = 'ready'
-      break
+      j.status = 'ready'; break
     case 'downloading':
     case 'processing':
     case 'paused':
-      j.cancelling = true
-      CancelDownload(j.id) // deletes partial files, then a "cancelled" event removes the item
-      break
+      j.cancelling = true; CancelDownload(j.id); break
     case 'error':
-      if (j.title) {
-        j.cancelling = true
-        CancelDownload(j.id) // clean up anything the failed attempt left behind
-      } else {
-        removeJob(j.id)
-      }
+      if (j.title) { j.cancelling = true; CancelDownload(j.id) } else removeJob(j.id)
       break
-    default: // ready, done
+    default:
       removeJob(j.id)
   }
 }
 
-function cancelLabel(j) {
+function cancelTitle(j) {
   if (j.cancelling) return 'Cancelling…'
-  if (j.status === 'fetching' || j.status === 'downloading' || j.status === 'processing' || j.status === 'paused') return 'Cancel'
+  if (['fetching', 'downloading', 'processing', 'paused'].includes(j.status)) return 'Cancel'
   if (j.status === 'queued') return 'Unqueue'
   return 'Remove'
 }
 
-function clearFinished() {
-  jobs.value = jobs.value.filter((j) => j.status !== 'done')
-}
-
-// ---------- progress display ----------
+function clearFinished() { jobs.value = jobs.value.filter((j) => j.status !== 'done') }
 
 const showProgress = (j) => ['queued', 'downloading', 'processing', 'paused'].includes(j.status)
 
 function progressText(j) {
   switch (j.status) {
-    case 'queued':
-      return 'Waiting for a free slot…'
-    case 'processing':
-      return 'Processing…'
-    case 'paused':
-      return j.progress > 0 ? `Paused at ${j.progress.toFixed(1)}%` : 'Paused'
+    case 'queued': return 'Waiting for a free slot…'
+    case 'processing': return 'Processing…'
+    case 'paused': return j.progress > 0 ? `Paused at ${j.progress.toFixed(1)}%` : 'Paused'
     case 'downloading': {
       const parts = [`${j.progress.toFixed(1)}%`]
       if (j.size) parts.push(`of ${j.size}`)
@@ -313,8 +253,6 @@ function progressText(j) {
   }
   return ''
 }
-
-// ---------- lifecycle ----------
 
 onMounted(async () => {
   offProgress = EventsOn('job-progress', (d) => {
@@ -331,54 +269,27 @@ onMounted(async () => {
     const j = byId(d.id)
     if (!j) return
     switch (d.status) {
-      case 'downloading':
-        j.status = 'downloading'
-        break
-      case 'processing':
-        j.status = 'processing'
-        j.progress = 100
-        j.speed = ''
-        j.eta = ''
-        break
-      case 'paused':
-        j.status = 'paused'
-        j.pausing = false
-        j.speed = ''
-        j.eta = ''
-        break
-      case 'cancelled':
-        removeJob(j.id)
-        break
-      case 'done':
-        j.status = 'done'
-        j.progress = 100
-        j.speed = ''
-        j.eta = ''
-        break
+      case 'downloading': j.status = 'downloading'; break
+      case 'processing': j.status = 'processing'; j.progress = 100; j.speed = ''; j.eta = ''; break
+      case 'paused': j.status = 'paused'; j.pausing = false; j.speed = ''; j.eta = ''; break
+      case 'cancelled': removeJob(j.id); break
+      case 'done': j.status = 'done'; j.progress = 100; j.speed = ''; j.eta = ''; break
       case 'error':
-        j.status = 'error'
-        j.error = d.error || 'Download failed'
-        j.pausing = false
-        j.cancelling = false
+        j.status = 'error'; j.error = d.error || 'Download failed'
+        j.pausing = false; j.cancelling = false
         break
     }
-    pump() // a slot may have freed up
+    pump()
   })
 
-  try {
-    ytdlpVersion.value = await CheckYtDlp()
-  } catch (e) {
-    ytdlpMissing.value = true
-  }
+  try { ytdlpVersion.value = await CheckYtDlp() } catch (e) { ytdlpMissing.value = true }
 
   try {
     const s = await GetSettings()
     if (s?.downloadFolder) outputDir.value = s.downloadFolder
     if (s?.maxConcurrent) maxConcurrent.value = s.maxConcurrent
     if (s?.defaultQuality) defaultQuality.value = s.defaultQuality
-  } catch (e) {
-    // first run, nothing saved yet
-  }
+  } catch (e) { /* first run */ }
 })
 
 onUnmounted(() => {
@@ -390,27 +301,40 @@ onUnmounted(() => {
 <template>
   <div class="app">
     <header>
-      <h1>YT-DLP Downloader</h1>
-      <span v-if="ytdlpVersion" class="version">yt-dlp {{ ytdlpVersion }}</span>
+      <div class="mark">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M12 3v11" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+          <path d="M7 10l5 5 5-5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M4 19.5h16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+        </svg>
+      </div>
+      <div class="title-block">
+        <h1>YT-DLP Downloader</h1>
+        <span v-if="ytdlpVersion" class="version">yt-dlp {{ ytdlpVersion }}</span>
+      </div>
     </header>
 
     <div v-if="ytdlpMissing" class="banner error">
-      yt-dlp was not found next to the app or on your PATH. Put <code>yt-dlp.exe</code> in the same folder as this app, or install it, then restart.
+      <CircleAlert />
+      <span>yt-dlp was not found next to the app or on your PATH. Put <code>yt-dlp.exe</code> in the same folder as this app, or install it, then restart.</span>
     </div>
-    <div v-if="notice" class="banner info">{{ notice }}</div>
+    <div v-if="notice" class="banner info">
+      <Info />
+      <span>{{ notice }}</span>
+    </div>
 
     <section class="card">
       <div class="settings-row">
-        <span class="label">Download folder</span>
+        <span class="label"><FolderOpen /> Download folder</span>
         <span class="folder" :title="outputDir">{{ outputDir || 'Not set' }}</span>
-        <button class="secondary small" @click="pickFolder">{{ outputDir ? 'Change' : 'Choose' }}</button>
+        <button class="btn secondary small" @click="pickFolder">{{ outputDir ? 'Change' : 'Choose' }}</button>
       </div>
       <div class="settings-row">
-        <label class="label" for="dq">Default quality</label>
+        <label class="label" for="dq"><SlidersHorizontal /> Default quality</label>
         <select id="dq" v-model="defaultQuality" @change="saveSettings">
           <option v-for="q in QUALITIES" :key="q.value" :value="q.value">{{ q.label }}</option>
         </select>
-        <label class="label spaced" for="mc">Downloads at once</label>
+        <label class="label spaced" for="mc"><Layers /> Downloads at once</label>
         <select id="mc" v-model.number="maxConcurrent" @change="onMaxChange">
           <option v-for="n in 5" :key="n" :value="n">{{ n }}</option>
         </select>
@@ -424,7 +348,7 @@ onUnmounted(() => {
         placeholder="Paste one or more links, one per line. Press Enter to add."
         @keydown.enter.exact.prevent="addUrls"
       ></textarea>
-      <button :disabled="!urlText.trim()" @click="addUrls">Add</button>
+      <button class="btn" :disabled="!urlText.trim()" @click="addUrls"><Plus /> Add</button>
     </section>
 
     <div v-if="jobs.length" class="toolbar">
@@ -432,29 +356,33 @@ onUnmounted(() => {
         {{ jobs.length }} item{{ jobs.length > 1 ? 's' : '' }}<template v-if="activeCount"> · {{ activeCount }} downloading</template>
       </span>
       <div class="spacer"></div>
-      <button v-if="readyCount" @click="downloadAll">Download all ({{ readyCount }})</button>
-      <button v-if="pausableCount" class="secondary" @click="pauseAll">Pause all</button>
-      <button v-if="pausedCount" class="secondary" @click="resumeAll">Resume all</button>
-      <button v-if="doneCount" class="ghost" @click="clearFinished">Clear finished</button>
+      <button v-if="readyCount" class="btn" @click="downloadAll"><Download /> Download all ({{ readyCount }})</button>
+      <button v-if="pausableCount" class="btn secondary" @click="pauseAll"><Pause /> Pause all</button>
+      <button v-if="pausedCount" class="btn secondary" @click="resumeAll"><Play /> Resume all</button>
+      <button v-if="doneCount" class="btn ghost" @click="clearFinished"><X /> Clear finished</button>
     </div>
 
-    <div v-if="!jobs.length" class="empty">Nothing here yet. Paste some links above to build your list.</div>
+    <div v-if="!jobs.length" class="empty">
+      <Inbox />
+      <span>Nothing here yet. Paste some links above to build your list.</span>
+    </div>
 
     <div v-for="j in jobs" :key="j.id" class="job" :class="j.status">
       <div class="thumb-wrap">
         <img v-if="j.thumbnail" :src="j.thumbnail" alt="" class="thumb" />
-        <div v-else class="thumb placeholder"><span v-if="j.status === 'fetching'" class="spinner big"></span></div>
+        <div v-else class="thumb placeholder">
+          <RotateCcw v-if="j.status === 'fetching'" class="spin" />
+          <ListVideo v-else />
+        </div>
       </div>
 
       <div class="job-main">
         <div class="job-title" :title="j.title || j.url">{{ j.title || j.url }}</div>
 
         <div class="job-sub">
-          <template v-if="j.status === 'fetching'"><span class="spinner"></span> Checking link…</template>
+          <template v-if="j.status === 'fetching'"><RotateCcw :size="12" class="spin" /> Checking link…</template>
           <template v-else-if="j.status === 'done'">Finished</template>
-          <template v-else>
-            {{ j.uploader }}<span v-if="j.uploader && j.duration"> · </span>{{ formatDuration(j.duration) }}
-          </template>
+          <template v-else>{{ j.uploader }}<span v-if="j.uploader && j.duration"> · </span>{{ formatDuration(j.duration) }}</template>
         </div>
 
         <div v-if="j.status === 'ready'" class="job-options">
@@ -470,17 +398,37 @@ onUnmounted(() => {
           <div class="progress-text">{{ progressText(j) }}</div>
         </div>
 
-        <div v-if="j.status === 'error'" class="job-error">{{ j.error }}</div>
+        <div v-if="j.status === 'error'" class="job-error">
+          <CircleAlert />
+          <span>{{ j.error }}</span>
+        </div>
       </div>
 
       <div class="job-actions">
-        <button v-if="j.status === 'ready'" class="small" @click="queueJob(j)">Download</button>
-        <button v-if="j.status === 'downloading'" class="secondary small" :disabled="j.pausing" @click="pauseJob(j)">
-          {{ j.pausing ? 'Pausing…' : 'Pause' }}
+        <button v-if="j.status === 'ready'" class="icon-btn primary" title="Download" aria-label="Download" @click="queueJob(j)">
+          <Download />
         </button>
-        <button v-if="j.status === 'paused'" class="small" @click="resumeJob(j)">Resume</button>
-        <button v-if="j.status === 'error'" class="small" @click="retryJob(j)">Retry</button>
-        <button class="ghost small" :disabled="j.cancelling" @click="cancelJob(j)">{{ cancelLabel(j) }}</button>
+        <button
+          v-if="j.status === 'downloading'"
+          class="icon-btn"
+          :disabled="j.pausing"
+          :title="j.pausing ? 'Pausing…' : 'Pause'"
+          :aria-label="j.pausing ? 'Pausing' : 'Pause'"
+          @click="pauseJob(j)"
+        >
+          <RotateCcw v-if="j.pausing" class="spin" />
+          <Pause v-else />
+        </button>
+        <button v-if="j.status === 'paused'" class="icon-btn primary" title="Resume" aria-label="Resume" @click="resumeJob(j)">
+          <Play />
+        </button>
+        <button v-if="j.status === 'error'" class="icon-btn" title="Retry" aria-label="Retry" @click="retryJob(j)">
+          <RotateCcw />
+        </button>
+        <button class="icon-btn danger" :disabled="j.cancelling" :title="cancelTitle(j)" :aria-label="cancelTitle(j)" @click="cancelJob(j)">
+          <RotateCcw v-if="j.cancelling" class="spin" />
+          <X v-else />
+        </button>
       </div>
     </div>
   </div>
